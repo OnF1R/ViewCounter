@@ -51,10 +51,23 @@ namespace ViewCounter.Infrastructure.Repositories
         public async Task<List<ViewEvent>> GetRecentAsync(
             string entityType, int count, CancellationToken ct = default)
         {
-            return await _db.ViewEvents
+            var maxDates = _db.ViewEvents
                 .Where(v => v.EntityType == entityType)
-                .Distinct()
-                .OrderByDescending(v => v.ViewedAt)
+                .GroupBy(v => v.EntityId)
+                .Select(g => new
+                {
+                    EntityId = g.Key,
+                    LastViewedAt = g.Max(v => v.ViewedAt)
+                }); // Таблица с последним просмотров по EntityId
+
+            var query = from ve in _db.ViewEvents
+                        join md in maxDates
+                            on new { ve.EntityId, ve.ViewedAt }
+                            equals new { md.EntityId, ViewedAt = md.LastViewedAt }
+                        orderby ve.ViewedAt descending
+                        select ve; // Выборка самых последних просмотров для своей сущности
+
+            return await query
                 .Take(count)
                 .ToListAsync(ct);
         }
